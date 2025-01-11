@@ -1,0 +1,260 @@
+---
+title: "Netflix Movie/TV Show"
+output:
+  html_document: default
+  pdf_document: default
+---
+## About this dataset: 
+Netflix is a leading streaming platform known for its vast library of movies. They have over 15000 movies or tv shows available on their platform, as of third quarter of 2024, they have around 282.7 million Subscribers globally. This dataset consists of listings of around half of their the movies and tv shows available on Netflix, along with details such as - cast, directors, ratings, release year, duration, etc.
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(stringr)
+```
+
+## Objective
+
+The primary goals of this case study are:
+
+1. **Explore and address missing data patterns** in the dataset, with a focus on the `director` column.
+2. **Identify trends in global movie production**, analyzing contributions from different countries.
+
+By following these steps, I want to uncover Netflix's content catalog.
+
+
+```{r}
+path <- "/Users/karthikkrishnan/Desktop/zoe\'s\ stuff/Zoe_DA/netflix_titles.csv"
+df <- read.csv(path, fileEncoding = "UTF-8")  # Ensure encoding is correct
+head(df)  # Check the first few rows
+colnames(df)  # Check column names
+
+```
+---
+
+## Step 1: Data Understanding and Preprocessing
+
+### Dataset Overview
+
+The first step involves importing the dataset, understanding its structure, and identifying the presence of missing values.
+
+### Missing Value Analysis
+
+The dataset contains missing values across multiple columns. Key observations include:
+
+- Six columns (`director`, `cast`, `country`, `date_added`, `rating`, and `duration`) have missing data.
+- The `director` column has the highest percentage of missing values.
+
+To address this, placeholders such as empty strings and `NULL` are replaced with `NA`, and the percentage of missing values in each column is calculated.
+
+```{r}
+
+# Replace common placeholders with NA
+df[df == ""] <- NA
+df[df == "NULL"] <- NA
+
+# Loop through each column in the data frame
+for (col in colnames(df)) {
+  percentage <- sum(is.na(df[[col]])) / nrow(df) * 100
+  
+  if (percentage > 0) {
+    cat(col, " percentage: ", percentage, "\n")
+  }
+}
+
+# Get the number of null value in each column
+colSums(is.na(df))
+
+```
+
+
+---
+
+## Step 2: Analytical Questions
+
+### **Question 1: Why Does the Director Column Have the Most Missing Data?**
+
+#### Hypothesis
+
+TV Shows are likely to lack director information compared to Movies due to the challenges in attributing a single director to multi-episode productions.
+
+#### Approach
+
+The analysis focuses on the following steps:
+
+- Examine the distribution of missing `director` data across Movies and TV Shows.
+- Visualize the differences to identify trends.
+
+
+```{r}
+counts_type <- table(df$type)
+counts_type 
+
+# After knowing the distribution between Movie and TV show, I want to know how many has director data.
+
+DF <- df %>% group_by(type) %>%  # Create a temporary data frame just to get that information, and avoid messing the original one
+  summarise(na_director = sum(is.na(director)))
+DF$with_director=counts_type-DF$na_director
+DF$with_director <- as.integer(DF$with_director)
+DF
+
+```
+
+
+```{r}
+df_long <- pivot_longer(
+  DF,
+  cols = c(na_director, with_director),
+  names_to = "director_status",
+  values_to = "count"
+)
+
+df_long
+# Create the stacked bar plot
+ggplot(df_long, aes(x = type, y = count, fill = director_status)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Stacked Bar Plot of Director Data",
+    x = "Type",
+    y = "Count",
+    fill = "Director Status"
+  ) +
+  theme_minimal()
+```
+
+#### Results and Observations
+
+- A **stacked bar plot** reveals that the majority of TV Shows lack director information, whereas Movies tend to have consistent data.
+- Further filtering of the dataset indicates that most TV Shows without director information are multi-season productions.  
+
+This suggests that changing directors across seasons may contribute to the missing data. One potential factor I decide to explore is the duration of the TV Shows. My aim is to examine whether TV Shows without director information share any similarities in their duration.
+
+To do this, I filter the dataset to include only entries where the type is "TV Show" and the director information is missing.
+
+
+```{r}
+df_filt = df %>% 
+  filter(type == "TV Show" & is.na(director)) %>%
+  dplyr::select(title, director, duration)
+
+
+df_filt2 = df %>% 
+  filter(type == "TV Show" & !is.na(director)) %>%
+  dplyr::select(title, director, duration)
+
+head(df_filt, 20)  
+head(df_filt2, 20)
+
+
+```
+
+After comparing TV Shows with and without director information based on their duration, it becomes evident that the majority of TV Shows lacking director information. A plausible explanation for this is that directors may change across episodes, making it more challenging to attribute the show to a single director. This insight highlights a unique characteristic of TV Show data compared to Movies, where director information is typically more consistent.
+
+---
+
+### **Question 2: Which Country Produces the Most Movies?**
+
+#### Hypothesis
+
+The United States is expected to lead in movie production, followed by other major contributors like India and the United Kingdom.
+
+#### Approach
+
+The analysis includes:
+
+- Filtering the dataset to focus on Movies and the `country` column.
+- Splitting entries with multiple countries into separate rows.
+- Identifying the top five contributors to movie production and visualizing their proportions.
+
+
+```{r}
+df_country = df %>% filter(type == "Movie" & !is.na(country))
+
+## The ",\\s+" means that the separator is a "," followed by one or more spaces
+# separate_rows(df_country,country,sep=",\\s+")
+
+library(dplyr)
+library(tidyr)
+
+df_country_2 = df_country %>%
+  select(show_id, title, country) %>%
+  separate_rows(country, sep = ",\\s+")
+
+```
+
+
+```{r}
+library(scales)
+library( dplyr )
+
+df_country_2 %>%
+  add_count(country) %>%
+  distinct(country, .keep_all = TRUE) %>%
+  filter(dense_rank(-n) < 6) %>%
+  select(country, n)
+
+library( data.table )
+df_country_pc = setDT( df_country_2 )[ , 100 * .N / nrow( df_country_2 ), by = country ]
+
+top_5 = df_country_pc %>%
+  arrange(desc(V1)) %>%  # Sort by V1 in descending order
+  filter(row_number() <= 5)  # Keep the top 5 rows
+
+top_5
+
+```
+```{r}
+sum(top_5$V1)
+
+top_5_others <- add_row(top_5, country= " Others", V1= 100 - sum(top_5$V1))
+top_5_others <- top_5_others %>%
+  arrange(desc(V1))
+
+top_5_others
+```
+
+#### Results and Observations
+
+- The United States dominates Netflix's movie catalog, followed by countries such as India, Canada, and the United Kingdom.
+- A **pie chart** highlights the contributions of the top five countries, with an "Others" category representing the rest.
+
+
+```{r}  
+ggplot(top_5_others, aes(x = "", y = V1, fill = reorder(country, -V1))) +
+  geom_bar(stat = "identity", width = 1) +
+  geom_text(aes(label = paste0(scales::percent(round(V1 / 100, 3)))), 
+            position = position_stack(vjust = 0.5)) + 
+  coord_polar("y", start = 0) + 
+  scale_fill_brewer(palette="Set3") +
+  labs(title = "Top 5 Countries Pie Chart", x = NULL, y = NULL) +
+  theme_void() +
+  theme(legend.title = element_blank())  # Optional: Removes the legend title
+
+```
+
+---
+
+## Conclusion
+
+This case study provides insights into Netflix's content catalog through systematic data analysis. Key findings include:
+
+1. **Director Data Trends:**  
+   - TV Shows often lack director data, likely due to challenges in attributing a single director to multi-episode productions.  
+   - Movies typically have consistent director information.
+
+2. **Global Movie Production:**  
+   - The United States leads as the top movie-producing country on Netflix.  
+   - Other countries like India and Canada also play significant roles.
+
+By applying data manipulation and visualization techniques, I demonstrated how data can uncover trends and address specific questions in the entertainment industry.
+
+
+
+
+
+
+
+
+
